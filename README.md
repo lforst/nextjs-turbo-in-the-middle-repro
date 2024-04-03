@@ -1,44 +1,62 @@
-This is a [Next.js](https://nextjs.org/) template to use when reporting a [bug in the Next.js repository](https://github.com/vercel/next.js/issues).
+Steps to reproduce:
 
-## Getting Started
+1. npm i
+2. npm run dev:turbo
+3. Try to open localhost:3000
 
-These are the steps you should follow when creating a bug report:
+What is wrong? First of all the app crashes, while it likely shouldn't. Dev mode without turbopack runs fine.
 
-- Bug reports must be verified against the `next@canary` release. The canary version of Next.js ships daily and includes all features and fixes that have not been released to the stable version yet. Think of canary as a public beta. Some issues may already be fixed in the canary version, so please verify that your issue reproduces before opening a new issue. Issues not verified against `next@canary` will be closed after 30 days.
-- Make sure your issue is not a duplicate. Use the [GitHub issue search](https://github.com/vercel/next.js/issues) to see if there is already an open issue that matches yours. If that is the case, upvoting the other issue's first comment is desirable as we often prioritize issues based on the number of votes they receive. Note: Adding a "+1" or "same issue" comment without adding more context about the issue should be avoided. If you only find closed related issues, you can link to them using the issue number and `#`, eg.: `I found this related issue: #3000`.
-- If you think the issue is not in Next.js, the best place to ask for help is our [Discord community](https://nextjs.org/discord) or [GitHub discussions](https://github.com/vercel/next.js/discussions). Our community is welcoming and can often answer a project-related question faster than the Next.js core team.
-- Make the reproduction as minimal as possible. Try to exclude any code that does not help reproducing the issue. E.g. if you experience problems with Routing, including ESLint configurations or API routes aren't necessary. The less lines of code is to read through, the easier it is for the Next.js team to investigate. It may also help catching bugs in your codebase before publishing an issue.
+The crash likely looks something like:
 
-## How to use this template
+```
+> dev:turbo
+> next dev --turbo
 
-Execute [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
+  ▲ Next.js 14.2.0-canary.54 (turbo)
+  - Local:        http://localhost:3000
+  - Experiments (use with caution):
+    · instrumentationHook
 
-```bash
-npx create-next-app --example reproduction-template-pages reproduction-app
+ ✓ Starting...
+TypeError: An error occurred while loading instrumentation hook: __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$opentelemetry$2f$instrumentation$2f$node_modules$2f$import$2d$in$2d$the$2d$middle$2f$index$2e$js__$5b$instrumentation$5d$__$28$ecmascript$29$__ is not a constructor
+    at _loop_1 (/tmp/reproduction-app/.next/server/chunks/node_modules_606038._.js:5783:27)
+    at InstrumentationBase.enable (/tmp/reproduction-app/.next/server/chunks/node_modules_606038._.js:5794:17)
+    at new InstrumentationBase (/tmp/reproduction-app/.next/server/chunks/node_modules_606038._.js:5640:19)
+    at new MyInstrumentation (/tmp/reproduction-app/.next/server/chunks/instrumentation_ts_ca8ae5._.js:21:9)
+    at Module.register (/tmp/reproduction-app/.next/server/chunks/instrumentation_ts_ca8ae5._.js:16:31)
+    at DevServer.runInstrumentationHookIfAvailable (/tmp/reproduction-app/node_modules/next/dist/server/dev/next-dev-server.js:437:43)
+    at async Span.traceAsyncFn (/tmp/reproduction-app/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.prepareImpl (/tmp/reproduction-app/node_modules/next/dist/server/dev/next-dev-server.js:214:9)
+    at async NextServer.prepare (/tmp/reproduction-app/node_modules/next/dist/server/next.js:161:13)
+    at async initializeImpl (/tmp/reproduction-app/node_modules/next/dist/server/lib/render-server.js:98:5)
+    at async initialize (/tmp/reproduction-app/node_modules/next/dist/server/lib/router-server.js:423:22)
+    at async Server.<anonymous> (/tmp/reproduction-app/node_modules/next/dist/server/lib/start-server.js:249:36)
 ```
 
-```bash
-yarn create next-app --example reproduction-template-pages reproduction-app
+If we take a look at the code of the top frame "/tmp/reproduction-app/.next/server/chunks/node*modules_606038.*.js:5783:27" we end up at a location that looks as follows:
+
+```ts
+// `RequireInTheMiddleSingleton` does not support absolute paths.
+// For an absolute paths, we must create a separate instance of the
+// require-in-the-middle `Hook`.
+var hook = __TURBOPACK__commonjs__external__path__.isAbsolute(module_2.name) ? new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$require$2d$in$2d$the$2d$middle$2f$index$2e$js__$5b$instrumentation$5d$__$28$ecmascript$29$__["Hook"]([
+    module_2.name
+], {
+    internals: true
+}, onRequire) : this_1._requireInTheMiddleSingleton.register(module_2.name, onRequire);
+this_1._hooks.push(hook);
+var esmHook = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$opentelemetry$2f$instrumentation$2f$node_modules$2f$import$2d$in$2d$the$2d$middle$2f$index$2e$js__$5b$instrumentation$5d$__$28$ecmascript$29$__([
+    module_2.name
+], {
+    internals: false
+}, hookFn);
+this_1._hooks.push(esmHook);
 ```
 
-```bash
-pnpm create next-app --example reproduction-template-pages reproduction-app
-```
+Searching for the comment on top code on github (https://github.com/search?type=code&q=%22%2F%2F+%60RequireInTheMiddleSingleton%60+does+not+support+absolute+paths.%22) lets us deduct that it comes from here: https://github.com/open-telemetry/opentelemetry-js/blob/e01f493a2480bda39f9ee67da1c33f31a57f91ff/experimental/packages/opentelemetry-instrumentation/src/platform/node/instrumentation.ts#L262.
 
-## Learn More
+It seems like the `new Hook()` call fails because it is not a class. Weird.
 
-To learn more about Next.js, take a look at the following resources:
+If we look at the cryptic variable name `__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$opentelemetry$2f$instrumentation$2f$node_modules$2f$import$2d$in$2d$the$2d$middle$2f$index$2e$js__$5b$instrumentation$5d$__$28$ecmascript$29$__` it looks like it is trying to import from `import-in-the-middle`, HOWEVER, the original source is importing `Hook` from `require-in-the-middle`: https://github.com/open-telemetry/opentelemetry-js/blob/e01f493a2480bda39f9ee67da1c33f31a57f91ff/experimental/packages/opentelemetry-instrumentation/src/platform/node/instrumentation.ts#L32 (here's the packaged code https://unpkg.com/browse/@opentelemetry/instrumentation@0.48.0/build/esm/platform/node/instrumentation.js)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [How to Contribute to Open Source (Next.js)](https://www.youtube.com/watch?v=cuoNzXFLitc) - a video tutorial by Lee Robinson
-- [Triaging in the Next.js repository](https://github.com/vercel/next.js/blob/canary/contributing.md#triaging) - how we work on issues
-- [CodeSandbox](https://codesandbox.io/s/github/vercel/next.js/tree/canary/examples/reproduction-template-pages) - Edit this repository on CodeSandbox
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
-
-## Deployment
-
-If your reproduction needs to be deployed, the easiest way is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+I couldn't find any place where Next.js or turbopack would change how `require-in-the-middle` is resolved so this is where I am stomped. As far as I am concerned all the libraries are not doing anything fishy.
